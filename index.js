@@ -3,6 +3,8 @@ const helmet = require("helmet");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const { pool } = require("./db");
+const crypto = require("crypto");
+const { z } = require("zod");
 
 const app = express();
 
@@ -51,6 +53,81 @@ app.get("/api/db-health", async (req, res) => {
     res.json({ ok: true, db: r.rows[0].ok === 1 });
   } catch (e) {
     res.status(500).json({ ok: false, db: false });
+  }
+});
+
+const nipResetRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  phone: z.string().trim().regex(/^\d{10}$/, "Teléfono debe ser de 10 dígitos"),
+});
+
+const nipResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // 10 intentos por IP cada 15 min (ajustable)
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
+  // Respuesta SIEMPRE genérica (anti-enumeración)
+  const genericResponse = {
+    ok: true,
+    message:
+      "Listo. Si los datos coinciden con un registro, recibirás un correo con la liga para restablecer tu NIP.",
+  };
+
+  // 1) Validación de formato (aquí sí regresamos 400 si viene mal)
+  const parsed = nipResetRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      message: "Datos inválidos. Revisa correo y teléfono.",
+      errors: parsed.error.issues.map((i) => ({ field: i.path.join("."), msg: i.message })),
+    });
+  }
+
+  const { email, phone } = parsed.data;
+
+  // 2) TTL (minutos) con default 60
+  const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 60);
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+
+  // 3) customer_ref sin PII: hash(email|phone)
+  const customerRef = crypto
+    .createHash("sha256")
+    .update(`${email}|${phone}`)
+    .digest("hex");
+
+  // 4) Token fuerte (no lo guardamos en claro)
+  const token = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+  try {
+    // Invalida tokens previos activos para esa llave (one-active-token policy)
+    await pool.query(
+      "UPDATE nip_reset_tokens SET used_at = now() WHERE customer_ref=$1 AND used_at IS NULL",
+      [customerRef]
+    );
+
+    // Inserta el nuevo token hash
+    await pool.query(
+      `INSERT INTO nip_reset_tokens (customer_ref, token_hash, expires_at, request_ip, user_agent)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        customerRef,
+        tokenHash,
+        expiresAt,
+        req.ip || null,
+        req.get("user-agent") || null,
+      ]
+    );
+
+    // Importante: NO devolvemos el token aquí (lo enviaremos por correo en el siguiente paso)
+    return res.status(200).json(genericResponse);
+  } catch (e) {
+    // No revelar detalles al cliente. Log mínimo para ti.
+    console.error("nip-reset/request error:", e?.message || e);
+    return res.status(200).json(genericResponse);
   }
 });
 
