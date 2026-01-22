@@ -63,7 +63,7 @@ const nipResetRequestSchema = z.object({
 
 const nipResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10, // 10 intentos por IP cada 15 min (ajustable)
+  max: 3, // 3 intentos por IP cada 15 min (ajustable)
   standardHeaders: true,
   legacyHeaders: false,
 });
