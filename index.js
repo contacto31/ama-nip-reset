@@ -279,9 +279,13 @@ Facebook: ${facebookUrl}
   <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto;">
     <tr>
       <td style="width:56px; height:56px; border-radius:999px; background:${brandOrange}; text-align:center; vertical-align:middle;">
-        <svg width="26" height="26" viewBox="0 0 24 24" style="vertical-align:middle; margin-top:2px;" xmlns="http://www.w3.org/2000/svg">
-          <path fill="#0D0D0D" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm3 8H9V7a3 3 0 1 1 6 0v3Z"/>
-        </svg>
+        <img
+          src="https://reset.amatracksafe.com.mx/assets/lock.png"
+          alt="Seguridad"
+          width="26"
+          height="26"
+          style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;"
+        />
       </td>
     </tr>
   </table>`;
@@ -399,23 +403,37 @@ Facebook: ${facebookUrl}
               <td style="background:${brandDark}; padding:14px 18px; border-radius:0 0 12px 12px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
 
-                  <tr>
-                    <td style="text-align:center; padding:6px 0;">
-                      <a href="${waLink}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
-                        <img src="${waIconUrl}" alt="WhatsApp" width="22" height="22" style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
-                        <span style="display:inline-block; vertical-align:middle;">${phoneDisplay}</span>
-                      </a>
-                    </td>
-                  </tr>
+                    <tr>
+                      <td style="text-align:center; padding:6px 0;">
+                        <a href="https://wa.me/525599900577"
+                          style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
+                          <img
+                            src="https://reset.amatracksafe.com.mx/assets/wa.png"
+                            alt="WhatsApp"
+                            width="22"
+                            height="22"
+                            style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;"
+                          />
+                          <span style="display:inline-block; vertical-align:middle;">55 9990 0577</span>
+                        </a>
+                      </td>
+                    </tr>
 
                   <tr>
                     <td style="text-align:center; padding:6px 0;">
-                      <a href="${facebookUrl}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
-                        <img src="${fbIconUrl}" alt="Facebook" width="22" height="22" style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
+                      <a href="https://www.facebook.com/profile.php?id=61585082213385"
+                        style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
+                        <img
+                          src="https://reset.amatracksafe.com.mx/assets/fb.png"
+                          alt="Facebook"
+                          width="22"
+                          height="22"
+                          style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;"
+                        />
                         <span style="display:inline-block; vertical-align:middle;">Facebook</span>
                       </a>
                     </td>
-                  </tr>
+                </tr>
 
                   <tr>
                     <td style="text-align:center; padding-top:10px;">
