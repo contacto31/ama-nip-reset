@@ -244,7 +244,7 @@ function buildResetEmail({ to, link, ttlMinutes }) {
   const phoneDisplay = "55 9990 0577";
   const waLink = "https://wa.me/525599900577";
   const siteUrl = "https://amatracksafe.com.mx";
-  const logoUrl = process.env.MAIL_LOGO_URL || ""; // recomendado: URL pública PNG
+  const logoUrl = process.env.MAIL_LOGO_URL || "";
 
   const subject = "Restablece tu NIP | AMA Track & Safe";
 
@@ -265,10 +265,9 @@ WhatsApp: ${phoneDisplay}
 Facebook: ${facebookUrl}
 `;
 
-  // Email HTML (estilo Propuesta 2)
   const headerLogo = logoUrl
-    ? `<img src="${logoUrl}" alt="AMA Track & Safe" style="display:block; max-width:260px; width:100%; height:auto; margin:0 auto;" />`
-    : `<div style="font-size:22px; font-weight:800; letter-spacing:.2px; color:${brandDark}; text-align:center;">
+    ? `<img src="${logoUrl}" alt="AMA Track & Safe" style="display:block; height:64px; width:auto; max-width:260px; margin:0 auto;" />`
+    : `<div style="font-size:20px; font-weight:900; letter-spacing:.2px; color:#fff; text-align:center;">
          AMA <span style="color:${brandOrange};">Track</span> &amp; Safe
        </div>`;
 
@@ -289,53 +288,49 @@ Facebook: ${facebookUrl}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8; padding:24px 0;">
       <tr>
         <td align="center" style="padding:0 16px;">
-          <!-- Container -->
           <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px;">
+
             <!-- Top orange line -->
             <tr>
               <td style="height:6px; background:${brandOrange}; border-radius:12px 12px 0 0;"></td>
             </tr>
 
-            <!-- Header -->
+            <!-- Header dark -->
             <tr>
-              <td style="background:#ffffff; padding:18px 18px 10px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
+              <td style="background:${brandDark}; padding:18px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
                 ${headerLogo}
               </td>
             </tr>
 
             <!-- Card -->
             <tr>
-              <td style="background:#ffffff; padding:0 18px 18px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff; border:1px solid #eef1f5; border-radius:16px; overflow:hidden; box-shadow:0 8px 24px rgba(13,13,13,0.08);">
+              <td style="background:#ffffff; padding:18px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+                  style="background:#ffffff; border:1px solid #eef1f5; border-radius:16px; overflow:hidden; box-shadow:0 8px 24px rgba(13,13,13,0.08);">
                   <tr>
-                    <td style="padding:22px 22px 14px; text-align:center;">
-                      <div style="width:54px; height:54px; border-radius:999px; background:${brandOrange}; display:inline-flex; align-items:center; justify-content:center;">
-                        <div style="font-size:26px; line-height:1; color:#fff;">🔒</div>
-                      </div>
-
-                      <h1 style="margin:14px 0 0; font-family:Arial, sans-serif; font-size:30px; line-height:1.2; color:#1b2430;">
+                    <td style="padding:22px 22px 10px; text-align:center;">
+                      <h1 style="margin:0; font-family:Arial, sans-serif; font-size:30px; line-height:1.2; color:#1b2430;">
                         Restablecer tu NIP
                       </h1>
+                      <p style="margin:10px 0 0; font-family:Arial, sans-serif; font-size:15px; line-height:1.6; color:#5b6673;">
+                        Crea un nuevo NIP de 4 dígitos para validar tu identidad al reportar un siniestro.
+                      </p>
                     </td>
                   </tr>
 
                   <tr>
-                    <td style="padding:0 22px 10px; font-family:Arial, sans-serif; color:#2f3a48;">
-                      <p style="margin:0 0 10px; font-size:16px; line-height:1.6;">
-                        Hola,
-                      </p>
-                      <p style="margin:0 0 10px; font-size:16px; line-height:1.6;">
-                        Recibimos una solicitud para restablecer tu NIP de seguridad.
-                      </p>
+                    <td style="padding:0 22px 12px; font-family:Arial, sans-serif; color:#2f3a48;">
+                      <p style="margin:0 0 10px; font-size:16px; line-height:1.6;">Hola,</p>
                       <p style="margin:0 0 16px; font-size:16px; line-height:1.6;">
-                        Haz clic en el botón para crear un nuevo NIP:
+                        Recibimos una solicitud para restablecer tu NIP de seguridad.
                       </p>
 
                       <!-- Button -->
                       <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 14px;">
                         <tr>
                           <td align="center" style="border-radius:10px; background:${brandDark}; box-shadow:0 8px 16px rgba(13,13,13,.18);">
-                            <a href="${link}" style="display:inline-block; padding:14px 22px; font-family:Arial, sans-serif; font-size:18px; font-weight:800; text-decoration:none; color:${brandOrange};">
+                            <a href="${link}"
+                              style="display:inline-block; padding:14px 22px; font-family:Arial, sans-serif; font-size:18px; font-weight:800; text-decoration:none; color:${brandOrange};">
                               Restablecer NIP
                             </a>
                           </td>
@@ -345,18 +340,18 @@ Facebook: ${facebookUrl}
                       <p style="margin:0 0 8px; font-size:14px; color:#6b7785;">
                         O copia y pega este enlace en tu navegador:
                       </p>
+
                       <div style="background:#fff7f0; border:1px solid #ffd7bf; padding:12px; border-radius:10px; font-size:13px; line-height:1.5; word-break:break-all;">
                         <a href="${link}" style="color:${brandOrange}; text-decoration:none;">${link}</a>
                       </div>
 
                       <div style="height:14px;"></div>
 
-                      <p style="margin:0; font-size:14px; color:#2f3a48; display:flex; align-items:center; gap:8px;">
-                        <span style="display:inline-block; width:20px; text-align:center;">⏱️</span>
-                        Este enlace expirará en <b style="color:${brandOrange};">${ttlMinutes} minutos</b>.
+                      <p style="margin:0; font-size:14px; color:#2f3a48;">
+                        <span style="color:${brandOrange}; font-weight:800;">Expira en ${ttlMinutes} minutos.</span>
                       </p>
 
-                      <div style="height:12px;"></div>
+                      <div style="height:10px;"></div>
 
                       <p style="margin:0; font-size:13px; color:#6b7785;">
                         Si tú no solicitaste este restablecimiento, puedes ignorar este correo.
@@ -376,8 +371,8 @@ Facebook: ${facebookUrl}
             <!-- Footer orange -->
             <tr>
               <td style="background:${brandOrange}; padding:16px 18px; text-align:center; color:#fff; font-family:Arial, sans-serif; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
-                <div style="font-size:26px; font-weight:900; letter-spacing:.2px;">AMA Track &amp; Safe</div>
-                <div style="margin-top:6px; font-size:16px; font-weight:700;">
+                <div style="font-size:22px; font-weight:900; letter-spacing:.2px;">AMA Track &amp; Safe</div>
+                <div style="margin-top:6px; font-size:15px; font-weight:700;">
                   <a href="${siteUrl}" style="color:#fff; text-decoration:none;">amatracksafe.com.mx</a>
                 </div>
               </td>
@@ -389,10 +384,9 @@ Facebook: ${facebookUrl}
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
                     <td style="text-align:center; padding:6px 0;">
-                      <!-- WhatsApp -->
-                      <a href="${waLink}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:700;">
+                      <a href="${waLink}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
                         <span style="display:inline-flex; width:34px; height:34px; border-radius:10px; background:#1f2a36; align-items:center; justify-content:center;">
-                          <span style="font-size:18px; line-height:1;">💬</span>
+                          <span style="font-size:16px; line-height:1;">WA</span>
                         </span>
                         ${phoneDisplay}
                       </a>
@@ -401,10 +395,9 @@ Facebook: ${facebookUrl}
 
                   <tr>
                     <td style="text-align:center; padding:6px 0;">
-                      <!-- Facebook -->
                       <a href="${facebookUrl}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
                         <span style="display:inline-flex; width:34px; height:34px; border-radius:10px; background:#1f2a36; align-items:center; justify-content:center;">
-                          <span style="font-size:18px; line-height:1;">f</span>
+                          <span style="font-size:16px; line-height:1;">f</span>
                         </span>
                         Facebook
                       </a>
@@ -435,7 +428,6 @@ Facebook: ${facebookUrl}
             </tr>
 
           </table>
-          <!-- /Container -->
         </td>
       </tr>
     </table>
