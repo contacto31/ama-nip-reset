@@ -26,7 +26,7 @@ app.use(
 );
 
 // Static assets (email logo, etc.)
-app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "30d" }));
+app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "1h" }));
 
 /**
  * Health checks (NO strict CORS)
@@ -408,7 +408,7 @@ Facebook: ${facebookUrl}
                         <a href="https://wa.me/525599900577"
                           style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
                           <img
-                            src="https://reset.amatracksafe.com.mx/assets/wa.png"
+                            src="https://reset.amatracksafe.com.mx/assets/wa.png?v=2"
                             alt="WhatsApp"
                             width="22"
                             height="22"
@@ -424,7 +424,7 @@ Facebook: ${facebookUrl}
                       <a href="https://www.facebook.com/profile.php?id=61585082213385"
                         style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
                         <img
-                          src="https://reset.amatracksafe.com.mx/assets/fb.png"
+                          src="https://reset.amatracksafe.com.mx/assets/fb.png?v=2"
                           alt="Facebook"
                           width="22"
                           height="22"
