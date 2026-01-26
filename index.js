@@ -5,13 +5,16 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { z } = require("zod");
 const nodemailer = require("nodemailer");
-const { pool } = require("./db");
 const path = require("path");
+const { pool } = require("./db");
 
 const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(express.json({ limit: "10kb" }));
+
+// Static assets (email logo/icons)
+app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "1h" }));
 
 /**
  * Global rate limit (soft)
@@ -25,9 +28,6 @@ app.use(
   })
 );
 
-// Static assets (email logo, etc.)
-app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "1h" }));
-
 /**
  * Health checks (NO strict CORS)
  */
@@ -39,14 +39,14 @@ app.get("/api/db-health", async (req, res) => {
   try {
     const r = await pool.query("SELECT 1 AS ok");
     res.json({ ok: true, db: r.rows[0].ok === 1 });
-  } catch {
+  } catch (e) {
+    console.error("[db-health] error:", e?.message || e);
     res.status(500).json({ ok: false, db: false });
   }
 });
 
 /**
  * Strict CORS ONLY for /nip-reset/*
- * Requires Origin and allowlist in ALLOWED_ORIGINS
  */
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
@@ -88,7 +88,7 @@ const nipResetConfirmSchema = z.object({
 });
 
 /**
- * Rate limits (configurable by env)
+ * Rate limits
  */
 const nipResetLimiter = rateLimit({
   windowMs: Number(process.env.NIP_RESET_IP_RATE_WINDOW_MINUTES || 15) * 60 * 1000,
@@ -105,10 +105,10 @@ const nipConfirmLimiter = rateLimit({
 });
 
 /**
- * Normalize & Airtable helpers
+ * Airtable helpers
  */
 function normalizePhoneForAirtable(phone10) {
-  return `52${phone10}`; // Airtable: 52 + 10 dígitos
+  return `52${phone10}`;
 }
 
 function airtableEscapeFormulaString(str) {
@@ -131,7 +131,6 @@ async function findAirtableRecordByEmailPhone(email, phone10) {
   const emailEsc = airtableEscapeFormulaString(email.toLowerCase());
   const phoneEsc = airtableEscapeFormulaString(phone12);
 
-  // AND(LOWER({Email})='...', OR({whatsappNumero}='52..', {whatsappNumero}=52..))
   const formula = `AND(LOWER({${emailField}})='${emailEsc}', OR({${phoneField}}='${phoneEsc}', {${phoneField}}=${phoneEsc}))`;
 
   const url =
@@ -152,9 +151,6 @@ async function findAirtableRecordByEmailPhone(email, phone10) {
   return Array.isArray(data?.records) && data.records.length ? data.records[0] : null;
 }
 
-/**
- * Rate limit per customer_ref (Airtable recordId)
- */
 async function isCustomerRefRateLimited(customerRef) {
   const windowMinutes = Number(process.env.CUSTOMER_REF_RATE_WINDOW_MINUTES || 60);
   const maxPerWindow = Number(process.env.CUSTOMER_REF_RATE_MAX || 2);
@@ -170,9 +166,6 @@ async function isCustomerRefRateLimited(customerRef) {
   return (rows?.[0]?.c || 0) >= maxPerWindow;
 }
 
-/**
- * Airtable update (PATCH record)
- */
 async function updateAirtableNip(recordId, nip) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
@@ -196,7 +189,7 @@ async function updateAirtableNip(recordId, nip) {
     },
     body: JSON.stringify({
       fields: {
-        [nipField]: nip, // texto (Single line text)
+        [nipField]: nip, // texto
       },
     }),
   });
@@ -208,7 +201,7 @@ async function updateAirtableNip(recordId, nip) {
 }
 
 /**
- * SMTP / Email helpers
+ * SMTP / Email
  */
 let mailTransporter = null;
 
@@ -246,8 +239,13 @@ function buildResetEmail({ to, link, ttlMinutes }) {
   const siteUrl = "https://amatracksafe.com.mx";
 
   const logoUrl = process.env.MAIL_LOGO_URL || "";
-  const waIconUrl = process.env.MAIL_WA_ICON_URL || "https://reset.amatracksafe.com.mx/assets/wa.png";
-  const fbIconUrl = process.env.MAIL_FB_ICON_URL || "https://reset.amatracksafe.com.mx/assets/fb.png";
+
+  // Cache-busting para Gmail (sube v=3, v=4 si vuelves a cambiar icons)
+  const assetsBase = "https://reset.amatracksafe.com.mx/assets";
+  const v = "2";
+  const lockIconUrl = `${assetsBase}/lock.png?v=${v}`;
+  const waIconUrl = `${assetsBase}/wa.png?v=${v}`;
+  const fbIconUrl = `${assetsBase}/fb.png?v=${v}`;
 
   const subject = "Restablece tu NIP | AMA Track & Safe";
 
@@ -274,21 +272,15 @@ Facebook: ${facebookUrl}
          AMA <span style="color:${brandOrange};">Track</span> &amp; Safe
        </div>`;
 
-  // Candado “pro” (sin emoji): círculo naranja + candado SVG inline (estable)
   const lockBadge = `
-  <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto;">
-    <tr>
-      <td style="width:56px; height:56px; border-radius:999px; background:${brandOrange}; text-align:center; vertical-align:middle;">
-        <img
-          src="https://reset.amatracksafe.com.mx/assets/lock.png"
-          alt="Seguridad"
-          width="26"
-          height="26"
-          style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;"
-        />
-      </td>
-    </tr>
-  </table>`;
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto;">
+  <tr>
+    <td style="width:56px; height:56px; border-radius:999px; background:${brandOrange}; text-align:center; vertical-align:middle;">
+      <img src="${lockIconUrl}" alt="Seguridad" width="26" height="26"
+           style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
+    </td>
+  </tr>
+</table>`;
 
   const html = `
 <!doctype html>
@@ -403,41 +395,32 @@ Facebook: ${facebookUrl}
               <td style="background:${brandDark}; padding:14px 18px; border-radius:0 0 12px 12px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
 
-                    <tr>
-                      <td style="text-align:center; padding:6px 0;">
-                        <a href="https://wa.me/525599900577"
-                          style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
-                          <img
-                            src="https://reset.amatracksafe.com.mx/assets/wa.png?v=2"
-                            alt="WhatsApp"
-                            width="22"
-                            height="22"
-                            style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;"
-                          />
-                          <span style="display:inline-block; vertical-align:middle;">55 9990 0577</span>
-                        </a>
-                      </td>
-                    </tr>
+                  <tr>
+                    <td style="text-align:center; padding:6px 0;">
+                      <a href="${waLink}"
+                         style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
+                        <img src="${waIconUrl}" alt="WhatsApp" width="22" height="22"
+                             style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
+                        <span style="display:inline-block; vertical-align:middle;">${phoneDisplay}</span>
+                      </a>
+                    </td>
+                  </tr>
 
                   <tr>
                     <td style="text-align:center; padding:6px 0;">
-                      <a href="https://www.facebook.com/profile.php?id=61585082213385"
-                        style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
-                        <img
-                          src="https://reset.amatracksafe.com.mx/assets/fb.png?v=2"
-                          alt="Facebook"
-                          width="22"
-                          height="22"
-                          style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;"
-                        />
+                      <a href="${facebookUrl}"
+                         style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
+                        <img src="${fbIconUrl}" alt="Facebook" width="22" height="22"
+                             style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
                         <span style="display:inline-block; vertical-align:middle;">Facebook</span>
                       </a>
                     </td>
-                </tr>
+                  </tr>
 
                   <tr>
                     <td style="text-align:center; padding-top:10px;">
-                      <a href="mailto:contacto@amatracksafe.com.mx" style="color:#cfd6de; text-decoration:none; font-family:Arial, sans-serif; font-size:13px;">
+                      <a href="mailto:contacto@amatracksafe.com.mx"
+                         style="color:#cfd6de; text-decoration:none; font-family:Arial, sans-serif; font-size:13px;">
                         contacto@amatracksafe.com.mx
                       </a>
                     </td>
@@ -477,30 +460,29 @@ async function sendResetEmail(toEmail, token, ttlMinutes) {
 
   const mail = buildResetEmail({ to: toEmail, link, ttlMinutes });
   const info = await transporter.sendMail(mail);
-  console.log("Reset email sent:", info?.messageId || "ok");
+  console.log("[mail] sent:", info?.messageId || "ok");
 }
 
 /**
  * POST /nip-reset/request
- * - Airtable match
- * - Store token hash in Postgres
- * - Send email with link to HORIZONS
- * - Generic response always (anti-enumeración)
  */
 app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
-  const genericResponse = {
-    ok: true,
-    message:
-      "Listo. Si los datos coinciden con un registro, recibirás un correo con la liga para restablecer tu NIP.",
-  };
+  // LOG DE ENTRADA (para depurar "no llegan correos")
   console.log("[nip-reset/request] hit", {
     t: new Date().toISOString(),
     origin: req.get("origin") || null,
     ip: req.ip || null,
   });
 
+  const genericResponse = {
+    ok: true,
+    message:
+      "Listo. Si los datos coinciden con un registro, recibirás un correo con la liga para restablecer tu NIP.",
+  };
+
   const parsed = nipResetRequestSchema.safeParse(req.body);
   if (!parsed.success) {
+    console.log("[nip-reset/request] invalid payload");
     return res.status(400).json({
       ok: false,
       message: "Datos inválidos. Revisa correo y teléfono.",
@@ -510,11 +492,13 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
 
   const { email, phone } = parsed.data;
 
+  // Airtable lookup
   let airtableRec = null;
   try {
     airtableRec = await findAirtableRecordByEmailPhone(email, phone);
+    console.log("[nip-reset/request] airtable match:", Boolean(airtableRec));
   } catch (e) {
-    console.error("Airtable lookup error:", e?.message || e);
+    console.error("[nip-reset/request] airtable lookup error:", e?.message || e);
     return res.status(200).json(genericResponse);
   }
 
@@ -524,21 +508,26 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
 
   const customerRef = airtableRec.id;
 
+  // Rate-limit per customerRef
   try {
     const limited = await isCustomerRefRateLimited(customerRef);
+    console.log("[nip-reset/request] customerRef limited:", limited);
     if (limited) return res.status(200).json(genericResponse);
   } catch (e) {
-    console.error("customerRef rate-limit error:", e?.message || e);
+    console.error("[nip-reset/request] customerRef rate-limit error:", e?.message || e);
     return res.status(200).json(genericResponse);
   }
 
+  // TTL
   const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 60);
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
 
+  // Token
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   try {
+    // One-active-token policy
     await pool.query(
       "UPDATE nip_reset_tokens SET used_at = now() WHERE customer_ref=$1 AND used_at IS NULL",
       [customerRef]
@@ -550,12 +539,15 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
       [customerRef, tokenHash, expiresAt, req.ip || null, req.get("user-agent") || null]
     );
 
+    console.log("[nip-reset/request] token stored, sending email to:", email);
+
     try {
       await sendResetEmail(email, token, ttlMinutes);
+      return res.status(200).json(genericResponse);
     } catch (mailErr) {
-      console.error("Email send error:", mailErr?.message || mailErr);
+      console.error("[nip-reset/request] Email send error:", mailErr?.message || mailErr);
 
-      // Invalidar token si no se pudo entregar correo
+      // Invalidate token if mail failed
       await pool.query(
         "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash=$1 AND used_at IS NULL",
         [tokenHash]
@@ -563,20 +555,14 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
 
       return res.status(200).json(genericResponse);
     }
-
-    return res.status(200).json(genericResponse);
   } catch (e) {
-    console.error("nip-reset/request error:", e?.message || e);
+    console.error("[nip-reset/request] internal error:", e?.message || e);
     return res.status(200).json(genericResponse);
   }
 });
 
 /**
  * POST /nip-reset/confirm
- * - Validate token + NIP
- * - Lock token row
- * - Update Airtable
- * - Mark token used
  */
 app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
   const parsed = nipResetConfirmSchema.safeParse(req.body);
@@ -658,9 +644,10 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
 });
 
 /**
- * Final error handler (generic)
+ * Final error handler
  */
 app.use((err, req, res, next) => {
+  console.error("[unhandled] error:", err?.message || err);
   res.status(500).json({ ok: false });
 });
 
