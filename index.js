@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { z } = require("zod");
 const nodemailer = require("nodemailer");
 const { pool } = require("./db");
+const path = require("path");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -23,6 +24,9 @@ app.use(
     legacyHeaders: false,
   })
 );
+
+// Static assets (email logo, etc.)
+app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "30d" }));
 
 /**
  * Health checks (NO strict CORS)
