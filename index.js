@@ -244,7 +244,10 @@ function buildResetEmail({ to, link, ttlMinutes }) {
   const phoneDisplay = "55 9990 0577";
   const waLink = "https://wa.me/525599900577";
   const siteUrl = "https://amatracksafe.com.mx";
+
   const logoUrl = process.env.MAIL_LOGO_URL || "";
+  const waIconUrl = process.env.MAIL_WA_ICON_URL || "https://reset.amatracksafe.com.mx/assets/wa.png";
+  const fbIconUrl = process.env.MAIL_FB_ICON_URL || "https://reset.amatracksafe.com.mx/assets/fb.png";
 
   const subject = "Restablece tu NIP | AMA Track & Safe";
 
@@ -266,10 +269,22 @@ Facebook: ${facebookUrl}
 `;
 
   const headerLogo = logoUrl
-    ? `<img src="${logoUrl}" alt="AMA Track & Safe" style="display:block; height:64px; width:auto; max-width:260px; margin:0 auto;" />`
-    : `<div style="font-size:20px; font-weight:900; letter-spacing:.2px; color:#fff; text-align:center;">
+    ? `<img src="${logoUrl}" alt="AMA Track & Safe" style="display:block; height:72px; width:auto; max-width:320px; margin:0 auto;" />`
+    : `<div style="font-size:20px; font-weight:900; letter-spacing:.2px; color:${brandDark}; text-align:center;">
          AMA <span style="color:${brandOrange};">Track</span> &amp; Safe
        </div>`;
+
+  // Candado “pro” (sin emoji): círculo naranja + candado SVG inline (estable)
+  const lockBadge = `
+  <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto;">
+    <tr>
+      <td style="width:56px; height:56px; border-radius:999px; background:${brandOrange}; text-align:center; vertical-align:middle;">
+        <svg width="26" height="26" viewBox="0 0 24 24" style="vertical-align:middle; margin-top:2px;" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#0D0D0D" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm3 8H9V7a3 3 0 1 1 6 0v3Z"/>
+        </svg>
+      </td>
+    </tr>
+  </table>`;
 
   const html = `
 <!doctype html>
@@ -290,14 +305,14 @@ Facebook: ${facebookUrl}
         <td align="center" style="padding:0 16px;">
           <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px;">
 
-            <!-- Top orange line -->
+            <!-- Top orange line (más ancha) -->
             <tr>
-              <td style="height:6px; background:${brandOrange}; border-radius:12px 12px 0 0;"></td>
+              <td style="height:12px; background:${brandOrange}; border-radius:12px 12px 0 0;"></td>
             </tr>
 
-            <!-- Header dark -->
+            <!-- Header BLANCO -->
             <tr>
-              <td style="background:${brandDark}; padding:18px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
+              <td style="background:#ffffff; padding:18px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
                 ${headerLogo}
               </td>
             </tr>
@@ -309,7 +324,8 @@ Facebook: ${facebookUrl}
                   style="background:#ffffff; border:1px solid #eef1f5; border-radius:16px; overflow:hidden; box-shadow:0 8px 24px rgba(13,13,13,0.08);">
                   <tr>
                     <td style="padding:22px 22px 10px; text-align:center;">
-                      <h1 style="margin:0; font-family:Arial, sans-serif; font-size:30px; line-height:1.2; color:#1b2430;">
+                      ${lockBadge}
+                      <h1 style="margin:14px 0 0; font-family:Arial, sans-serif; font-size:30px; line-height:1.2; color:#1b2430;">
                         Restablecer tu NIP
                       </h1>
                       <p style="margin:10px 0 0; font-family:Arial, sans-serif; font-size:15px; line-height:1.6; color:#5b6673;">
@@ -382,13 +398,12 @@ Facebook: ${facebookUrl}
             <tr>
               <td style="background:${brandDark}; padding:14px 18px; border-radius:0 0 12px 12px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+
                   <tr>
                     <td style="text-align:center; padding:6px 0;">
                       <a href="${waLink}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:800;">
-                        <span style="display:inline-flex; width:34px; height:34px; border-radius:10px; background:#1f2a36; align-items:center; justify-content:center;">
-                          <span style="font-size:16px; line-height:1;">WA</span>
-                        </span>
-                        ${phoneDisplay}
+                        <img src="${waIconUrl}" alt="WhatsApp" width="22" height="22" style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
+                        <span style="display:inline-block; vertical-align:middle;">${phoneDisplay}</span>
                       </a>
                     </td>
                   </tr>
@@ -396,10 +411,8 @@ Facebook: ${facebookUrl}
                   <tr>
                     <td style="text-align:center; padding:6px 0;">
                       <a href="${facebookUrl}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
-                        <span style="display:inline-flex; width:34px; height:34px; border-radius:10px; background:#1f2a36; align-items:center; justify-content:center;">
-                          <span style="font-size:16px; line-height:1;">f</span>
-                        </span>
-                        Facebook
+                        <img src="${fbIconUrl}" alt="Facebook" width="22" height="22" style="display:inline-block; vertical-align:middle; border:0; outline:none; text-decoration:none;" />
+                        <span style="display:inline-block; vertical-align:middle;">Facebook</span>
                       </a>
                     </td>
                   </tr>
