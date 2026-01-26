@@ -4,6 +4,7 @@ const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { z } = require("zod");
+const nodemailer = require("nodemailer");
 const { pool } = require("./db");
 
 const app = express();
@@ -40,7 +41,7 @@ app.get("/api/db-health", async (req, res) => {
   try {
     const r = await pool.query("SELECT 1 AS ok");
     res.json({ ok: true, db: r.rows[0].ok === 1 });
-  } catch (e) {
+  } catch {
     res.status(500).json({ ok: false, db: false });
   }
 });
@@ -133,8 +134,7 @@ async function findAirtableRecordByEmailPhone(email, phone10) {
   const emailEsc = airtableEscapeFormulaString(email.toLowerCase());
   const phoneEsc = airtableEscapeFormulaString(phone12);
 
-  // Soporta campo teléfono como texto o número:
-  // OR({whatsappNumero}='52xxxxxxxxxx', {whatsappNumero}=52xxxxxxxxxx)
+  // AND(LOWER({Email})='...', OR({whatsappNumero}='52..', {whatsappNumero}=52..))
   const formula = `AND(LOWER({${emailField}})='${emailEsc}', OR({${phoneField}}='${phoneEsc}', {${phoneField}}=${phoneEsc}))`;
 
   const url =
@@ -200,7 +200,7 @@ async function updateAirtableNip(recordId, nip) {
     },
     body: JSON.stringify({
       fields: {
-        [nipField]: nip,
+        [nipField]: nip, // texto (ya corregiste tipo de campo)
       },
     }),
   });
@@ -212,12 +212,96 @@ async function updateAirtableNip(recordId, nip) {
 }
 
 /**
+ * SMTP / Email helpers (Gmail)
+ */
+let mailTransporter = null;
+
+function getMailer() {
+  if (mailTransporter) return mailTransporter;
+
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 465);
+  const secure = String(process.env.SMTP_SECURE || "true").toLowerCase() === "true";
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    throw new Error("SMTP: faltan variables de entorno");
+  }
+
+  mailTransporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+  });
+
+  return mailTransporter;
+}
+
+function buildResetEmail({ to, link, ttlMinutes }) {
+  const from = process.env.MAIL_FROM || `"AMA Track & Safe" <${process.env.SMTP_USER}>`;
+
+  const subject = "Restablece tu NIP | AMA Track & Safe";
+
+  const text =
+`Hola,
+
+Recibimos una solicitud para restablecer tu NIP de seguridad.
+
+Abre esta liga para crear un nuevo NIP:
+${link}
+
+Esta liga expira en ${ttlMinutes} minutos.
+Si tú no hiciste esta solicitud, puedes ignorar este correo.
+
+— AMA Track & Safe
+`;
+
+  const html =
+`<div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
+  <h2 style="margin:0 0 8px;">Restablecer NIP</h2>
+  <p style="margin:0 0 12px;">Recibimos una solicitud para restablecer tu NIP de seguridad.</p>
+  <p style="margin:0 0 16px;">
+    <a href="${link}" style="display:inline-block; padding:10px 14px; text-decoration:none; border-radius:8px; background:#0D0D0D; color:#fff;">
+      Restablecer NIP
+    </a>
+  </p>
+  <p style="margin:0 0 12px;">O copia y pega esta liga en tu navegador:</p>
+  <p style="margin:0 0 16px; word-break: break-all;">
+    <a href="${link}">${link}</a>
+  </p>
+  <p style="margin:0 0 12px; color:#333;">Esta liga expira en <b>${ttlMinutes} minutos</b>.</p>
+  <p style="margin:0; color:#555;">Si tú no hiciste esta solicitud, puedes ignorar este correo.</p>
+  <hr style="border:none; border-top:1px solid #eee; margin:16px 0;" />
+  <p style="margin:0; color:#777;">— AMA Track & Safe</p>
+</div>`;
+
+  return { from, to, subject, text, html };
+}
+
+async function sendResetEmail(toEmail, token, ttlMinutes) {
+  const base = process.env.RESET_LINK_BASE || "https://amatracksafe.com.mx/restablecer-nip";
+  const link = `${base}?token=${encodeURIComponent(token)}`;
+
+  const transporter = getMailer();
+
+  // Verifica conexión SMTP (rápido y útil en logs)
+  await transporter.verify();
+
+  const mail = buildResetEmail({ to: toEmail, link, ttlMinutes });
+  const info = await transporter.sendMail(mail);
+
+  // No logueamos token ni correo completo; solo messageId
+  console.log("Reset email sent:", info?.messageId || "ok");
+}
+
+/**
  * POST /nip-reset/request
- * - Requires CORS Origin allowlisted (browser site)
- * - Validates payload
- * - Finds record in Airtable (Email + whatsappNumero=52+phone)
- * - Stores token hash in Postgres (customer_ref = Airtable recordId)
- * - Returns generic response always; optional dev return token for testing
+ * - Airtable match
+ * - Store token hash in Postgres
+ * - Send email with link to HORIZONS
+ * - Generic response always
  */
 app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
   const genericResponse = {
@@ -243,12 +327,10 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
     airtableRec = await findAirtableRecordByEmailPhone(email, phone);
   } catch (e) {
     console.error("Airtable lookup error:", e?.message || e);
-    // No emitimos token si Airtable falla
     return res.status(200).json(genericResponse);
   }
 
   if (!airtableRec) {
-    // Anti-enumeración: misma respuesta aunque no exista
     return res.status(200).json(genericResponse);
   }
 
@@ -257,9 +339,7 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
   // 2) Rate limit por customerRef
   try {
     const limited = await isCustomerRefRateLimited(customerRef);
-    if (limited) {
-      return res.status(200).json(genericResponse);
-    }
+    if (limited) return res.status(200).json(genericResponse);
   } catch (e) {
     console.error("customerRef rate-limit error:", e?.message || e);
     return res.status(200).json(genericResponse);
@@ -286,17 +366,21 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
       [customerRef, tokenHash, expiresAt, req.ip || null, req.get("user-agent") || null]
     );
 
-    // DEV: para pruebas sin email (apágalo en producción)
-    const devReturn = String(process.env.NIP_RESET_DEV_RETURN_TOKEN || "").toLowerCase() === "true";
-    if (devReturn) {
-      return res.status(200).json({
-        ...genericResponse,
-        devToken: token,
-        devLink: `https://amatracksafe.com.mx/restablecer-nip?token=${token}`,
-      });
+    // 5) Enviar correo (si falla, invalidamos este token para no dejarlo vivo sin entrega)
+    try {
+      await sendResetEmail(email, token, ttlMinutes);
+    } catch (mailErr) {
+      console.error("Email send error:", mailErr?.message || mailErr);
+
+      // Invalidar este token recién creado
+      await pool.query(
+        "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash=$1 AND used_at IS NULL",
+        [tokenHash]
+      );
+
+      return res.status(200).json(genericResponse);
     }
 
-    // Producción: aquí mañana enviamos correo con la liga a HORIZONS
     return res.status(200).json(genericResponse);
   } catch (e) {
     console.error("nip-reset/request error:", e?.message || e);
@@ -309,10 +393,8 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
  * - Validates token + NIP + confirmation
  * - Locks token row FOR UPDATE
  * - Checks: exists, not used, not expired
- * - Updates Airtable NIP (Vehiculos.NIP)
- * - Marks token as used (one-time)
- *
- * Note: Requires customer_ref to be Airtable recordId (recXXXX) -> now true by design.
+ * - Updates Airtable NIP
+ * - Marks token as used
  */
 app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
   const parsed = nipResetConfirmSchema.safeParse(req.body);
@@ -360,7 +442,6 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
 
     const recordId = row.customer_ref;
 
-    // Guardrail: debe ser recordId de Airtable
     const looksLikeAirtableRecordId =
       typeof recordId === "string" && recordId.startsWith("rec") && recordId.length >= 10;
 
@@ -372,10 +453,8 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
       });
     }
 
-    // Update Airtable
     await updateAirtableNip(recordId, nip);
 
-    // Mark token used
     const u = await client.query(
       "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash=$1 AND used_at IS NULL",
       [tokenHash]
