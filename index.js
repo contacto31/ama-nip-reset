@@ -493,6 +493,11 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
     message:
       "Listo. Si los datos coinciden con un registro, recibirás un correo con la liga para restablecer tu NIP.",
   };
+  console.log("[nip-reset/request] hit", {
+    t: new Date().toISOString(),
+    origin: req.get("origin") || null,
+    ip: req.ip || null,
+  });
 
   const parsed = nipResetRequestSchema.safeParse(req.body);
   if (!parsed.success) {
