@@ -8,14 +8,8 @@ const nodemailer = require("nodemailer");
 const { pool } = require("./db");
 
 const app = express();
-
-// EasyPanel reverse proxy
 app.set("trust proxy", 1);
-
-// Security headers
 app.use(helmet());
-
-// JSON body limit
 app.use(express.json({ limit: "10kb" }));
 
 /**
@@ -110,8 +104,7 @@ const nipConfirmLimiter = rateLimit({
  * Normalize & Airtable helpers
  */
 function normalizePhoneForAirtable(phone10) {
-  // Modal pide 10 dígitos; Airtable guarda 52 + 10 dígitos sin espacios
-  return `52${phone10}`;
+  return `52${phone10}`; // Airtable: 52 + 10 dígitos
 }
 
 function airtableEscapeFormulaString(str) {
@@ -152,12 +145,11 @@ async function findAirtableRecordByEmailPhone(email, phone10) {
   }
 
   const data = await resp.json();
-  const rec = Array.isArray(data?.records) && data.records.length ? data.records[0] : null;
-  return rec; // { id: "rec...", fields: {...} } o null
+  return Array.isArray(data?.records) && data.records.length ? data.records[0] : null;
 }
 
 /**
- * Rate limit per customer_ref (now Airtable recordId recXXXX)
+ * Rate limit per customer_ref (Airtable recordId)
  */
 async function isCustomerRefRateLimited(customerRef) {
   const windowMinutes = Number(process.env.CUSTOMER_REF_RATE_WINDOW_MINUTES || 60);
@@ -200,7 +192,7 @@ async function updateAirtableNip(recordId, nip) {
     },
     body: JSON.stringify({
       fields: {
-        [nipField]: nip, // texto (ya corregiste tipo de campo)
+        [nipField]: nip, // texto (Single line text)
       },
     }),
   });
@@ -212,7 +204,7 @@ async function updateAirtableNip(recordId, nip) {
 }
 
 /**
- * SMTP / Email helpers (Gmail)
+ * SMTP / Email helpers
  */
 let mailTransporter = null;
 
@@ -242,6 +234,14 @@ function getMailer() {
 function buildResetEmail({ to, link, ttlMinutes }) {
   const from = process.env.MAIL_FROM || `"AMA Track & Safe" <${process.env.SMTP_USER}>`;
 
+  const brandOrange = "#E27C39";
+  const brandDark = "#0D0D0D";
+  const facebookUrl = "https://www.facebook.com/profile.php?id=61585082213385";
+  const phoneDisplay = "55 9990 0577";
+  const waLink = "https://wa.me/525599900577";
+  const siteUrl = "https://amatracksafe.com.mx";
+  const logoUrl = process.env.MAIL_LOGO_URL || ""; // recomendado: URL pública PNG
+
   const subject = "Restablece tu NIP | AMA Track & Safe";
 
   const text =
@@ -252,30 +252,191 @@ Recibimos una solicitud para restablecer tu NIP de seguridad.
 Abre esta liga para crear un nuevo NIP:
 ${link}
 
-Esta liga expira en ${ttlMinutes} minutos.
+Este enlace expira en ${ttlMinutes} minutos.
 Si tú no hiciste esta solicitud, puedes ignorar este correo.
 
 — AMA Track & Safe
+${siteUrl}
+WhatsApp: ${phoneDisplay}
+Facebook: ${facebookUrl}
 `;
 
-  const html =
-`<div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
-  <h2 style="margin:0 0 8px;">Restablecer NIP</h2>
-  <p style="margin:0 0 12px;">Recibimos una solicitud para restablecer tu NIP de seguridad.</p>
-  <p style="margin:0 0 16px;">
-    <a href="${link}" style="display:inline-block; padding:10px 14px; text-decoration:none; border-radius:8px; background:#0D0D0D; color:#fff;">
-      Restablecer NIP
-    </a>
-  </p>
-  <p style="margin:0 0 12px;">O copia y pega esta liga en tu navegador:</p>
-  <p style="margin:0 0 16px; word-break: break-all;">
-    <a href="${link}">${link}</a>
-  </p>
-  <p style="margin:0 0 12px; color:#333;">Esta liga expira en <b>${ttlMinutes} minutos</b>.</p>
-  <p style="margin:0; color:#555;">Si tú no hiciste esta solicitud, puedes ignorar este correo.</p>
-  <hr style="border:none; border-top:1px solid #eee; margin:16px 0;" />
-  <p style="margin:0; color:#777;">— AMA Track & Safe</p>
-</div>`;
+  // Email HTML (estilo Propuesta 2)
+  const headerLogo = logoUrl
+    ? `<img src="${logoUrl}" alt="AMA Track & Safe" style="display:block; max-width:260px; width:100%; height:auto; margin:0 auto;" />`
+    : `<div style="font-size:22px; font-weight:800; letter-spacing:.2px; color:${brandDark}; text-align:center;">
+         AMA <span style="color:${brandOrange};">Track</span> &amp; Safe
+       </div>`;
+
+  const html = `
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>Restablecer NIP</title>
+  </head>
+  <body style="margin:0; padding:0; background:#f4f6f8;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      Restablece tu NIP de seguridad. Enlace válido por ${ttlMinutes} minutos.
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8; padding:24px 0;">
+      <tr>
+        <td align="center" style="padding:0 16px;">
+          <!-- Container -->
+          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px;">
+            <!-- Top orange line -->
+            <tr>
+              <td style="height:6px; background:${brandOrange}; border-radius:12px 12px 0 0;"></td>
+            </tr>
+
+            <!-- Header -->
+            <tr>
+              <td style="background:#ffffff; padding:18px 18px 10px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
+                ${headerLogo}
+              </td>
+            </tr>
+
+            <!-- Card -->
+            <tr>
+              <td style="background:#ffffff; padding:0 18px 18px; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff; border:1px solid #eef1f5; border-radius:16px; overflow:hidden; box-shadow:0 8px 24px rgba(13,13,13,0.08);">
+                  <tr>
+                    <td style="padding:22px 22px 14px; text-align:center;">
+                      <div style="width:54px; height:54px; border-radius:999px; background:${brandOrange}; display:inline-flex; align-items:center; justify-content:center;">
+                        <div style="font-size:26px; line-height:1; color:#fff;">🔒</div>
+                      </div>
+
+                      <h1 style="margin:14px 0 0; font-family:Arial, sans-serif; font-size:30px; line-height:1.2; color:#1b2430;">
+                        Restablecer tu NIP
+                      </h1>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding:0 22px 10px; font-family:Arial, sans-serif; color:#2f3a48;">
+                      <p style="margin:0 0 10px; font-size:16px; line-height:1.6;">
+                        Hola,
+                      </p>
+                      <p style="margin:0 0 10px; font-size:16px; line-height:1.6;">
+                        Recibimos una solicitud para restablecer tu NIP de seguridad.
+                      </p>
+                      <p style="margin:0 0 16px; font-size:16px; line-height:1.6;">
+                        Haz clic en el botón para crear un nuevo NIP:
+                      </p>
+
+                      <!-- Button -->
+                      <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 14px;">
+                        <tr>
+                          <td align="center" style="border-radius:10px; background:${brandDark}; box-shadow:0 8px 16px rgba(13,13,13,.18);">
+                            <a href="${link}" style="display:inline-block; padding:14px 22px; font-family:Arial, sans-serif; font-size:18px; font-weight:800; text-decoration:none; color:${brandOrange};">
+                              Restablecer NIP
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <p style="margin:0 0 8px; font-size:14px; color:#6b7785;">
+                        O copia y pega este enlace en tu navegador:
+                      </p>
+                      <div style="background:#fff7f0; border:1px solid #ffd7bf; padding:12px; border-radius:10px; font-size:13px; line-height:1.5; word-break:break-all;">
+                        <a href="${link}" style="color:${brandOrange}; text-decoration:none;">${link}</a>
+                      </div>
+
+                      <div style="height:14px;"></div>
+
+                      <p style="margin:0; font-size:14px; color:#2f3a48; display:flex; align-items:center; gap:8px;">
+                        <span style="display:inline-block; width:20px; text-align:center;">⏱️</span>
+                        Este enlace expirará en <b style="color:${brandOrange};">${ttlMinutes} minutos</b>.
+                      </p>
+
+                      <div style="height:12px;"></div>
+
+                      <p style="margin:0; font-size:13px; color:#6b7785;">
+                        Si tú no solicitaste este restablecimiento, puedes ignorar este correo.
+                      </p>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding:14px 22px 18px;">
+                      <hr style="border:none; border-top:1px solid #eef1f5; margin:0;">
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer orange -->
+            <tr>
+              <td style="background:${brandOrange}; padding:16px 18px; text-align:center; color:#fff; font-family:Arial, sans-serif; border-left:1px solid #e9edf2; border-right:1px solid #e9edf2;">
+                <div style="font-size:26px; font-weight:900; letter-spacing:.2px;">AMA Track &amp; Safe</div>
+                <div style="margin-top:6px; font-size:16px; font-weight:700;">
+                  <a href="${siteUrl}" style="color:#fff; text-decoration:none;">amatracksafe.com.mx</a>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Footer dark -->
+            <tr>
+              <td style="background:${brandDark}; padding:14px 18px; border-radius:0 0 12px 12px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="text-align:center; padding:6px 0;">
+                      <!-- WhatsApp -->
+                      <a href="${waLink}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:16px; font-weight:700;">
+                        <span style="display:inline-flex; width:34px; height:34px; border-radius:10px; background:#1f2a36; align-items:center; justify-content:center;">
+                          <span style="font-size:18px; line-height:1;">💬</span>
+                        </span>
+                        ${phoneDisplay}
+                      </a>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="text-align:center; padding:6px 0;">
+                      <!-- Facebook -->
+                      <a href="${facebookUrl}" style="display:inline-flex; align-items:center; gap:10px; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:14px;">
+                        <span style="display:inline-flex; width:34px; height:34px; border-radius:10px; background:#1f2a36; align-items:center; justify-content:center;">
+                          <span style="font-size:18px; line-height:1;">f</span>
+                        </span>
+                        Facebook
+                      </a>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="text-align:center; padding-top:10px;">
+                      <a href="mailto:contacto@amatracksafe.com.mx" style="color:#cfd6de; text-decoration:none; font-family:Arial, sans-serif; font-size:13px;">
+                        contacto@amatracksafe.com.mx
+                      </a>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="text-align:center; padding-top:10px;">
+                      <div style="height:1px; background:#2b3644; width:100%;"></div>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="text-align:center; padding-top:10px; color:#9aa6b2; font-family:Arial, sans-serif; font-size:11px;">
+                      Este correo fue enviado automáticamente. Por seguridad, no compartas este enlace.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+          <!-- /Container -->
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 
   return { from, to, subject, text, html };
 }
@@ -285,14 +446,10 @@ async function sendResetEmail(toEmail, token, ttlMinutes) {
   const link = `${base}?token=${encodeURIComponent(token)}`;
 
   const transporter = getMailer();
-
-  // Verifica conexión SMTP (rápido y útil en logs)
   await transporter.verify();
 
   const mail = buildResetEmail({ to: toEmail, link, ttlMinutes });
   const info = await transporter.sendMail(mail);
-
-  // No logueamos token ni correo completo; solo messageId
   console.log("Reset email sent:", info?.messageId || "ok");
 }
 
@@ -301,7 +458,7 @@ async function sendResetEmail(toEmail, token, ttlMinutes) {
  * - Airtable match
  * - Store token hash in Postgres
  * - Send email with link to HORIZONS
- * - Generic response always
+ * - Generic response always (anti-enumeración)
  */
 app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
   const genericResponse = {
@@ -321,7 +478,6 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
 
   const { email, phone } = parsed.data;
 
-  // 1) Airtable lookup
   let airtableRec = null;
   try {
     airtableRec = await findAirtableRecordByEmailPhone(email, phone);
@@ -336,7 +492,6 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
 
   const customerRef = airtableRec.id;
 
-  // 2) Rate limit por customerRef
   try {
     const limited = await isCustomerRefRateLimited(customerRef);
     if (limited) return res.status(200).json(genericResponse);
@@ -345,16 +500,13 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
     return res.status(200).json(genericResponse);
   }
 
-  // 3) TTL
   const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 60);
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
 
-  // 4) Token fuerte (no se guarda en claro)
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   try {
-    // One-active-token policy
     await pool.query(
       "UPDATE nip_reset_tokens SET used_at = now() WHERE customer_ref=$1 AND used_at IS NULL",
       [customerRef]
@@ -366,13 +518,12 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
       [customerRef, tokenHash, expiresAt, req.ip || null, req.get("user-agent") || null]
     );
 
-    // 5) Enviar correo (si falla, invalidamos este token para no dejarlo vivo sin entrega)
     try {
       await sendResetEmail(email, token, ttlMinutes);
     } catch (mailErr) {
       console.error("Email send error:", mailErr?.message || mailErr);
 
-      // Invalidar este token recién creado
+      // Invalidar token si no se pudo entregar correo
       await pool.query(
         "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash=$1 AND used_at IS NULL",
         [tokenHash]
@@ -390,11 +541,10 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
 
 /**
  * POST /nip-reset/confirm
- * - Validates token + NIP + confirmation
- * - Locks token row FOR UPDATE
- * - Checks: exists, not used, not expired
- * - Updates Airtable NIP
- * - Marks token as used
+ * - Validate token + NIP
+ * - Lock token row
+ * - Update Airtable
+ * - Mark token used
  */
 app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
   const parsed = nipResetConfirmSchema.safeParse(req.body);
@@ -441,7 +591,6 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
     }
 
     const recordId = row.customer_ref;
-
     const looksLikeAirtableRecordId =
       typeof recordId === "string" && recordId.startsWith("rec") && recordId.length >= 10;
 
