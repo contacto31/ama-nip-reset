@@ -242,7 +242,7 @@ function buildResetEmail({ to, link, ttlMinutes }) {
 
   // Cache-busting para Gmail (sube v=3, v=4 si vuelves a cambiar icons)
   const assetsBase = "https://reset.amatracksafe.com.mx/assets";
-  const v = "2";
+  const v = "3";
   const lockIconUrl = `${assetsBase}/lock.png?v=${v}`;
   const waIconUrl = `${assetsBase}/wa.png?v=${v}`;
   const fbIconUrl = `${assetsBase}/fb.png?v=${v}`;
