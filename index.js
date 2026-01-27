@@ -419,15 +419,6 @@ Facebook: ${facebookUrl}
 
                   <tr>
                     <td style="text-align:center; padding-top:10px;">
-                      <a href="mailto:contacto@amatracksafe.com.mx"
-                         style="color:#cfd6de; text-decoration:none; font-family:Arial, sans-serif; font-size:13px;">
-                        contacto@amatracksafe.com.mx
-                      </a>
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td style="text-align:center; padding-top:10px;">
                       <div style="height:1px; background:#2b3644; width:100%;"></div>
                     </td>
                   </tr>
