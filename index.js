@@ -60,7 +60,7 @@ const corsForNipReset = cors({
     if (allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error("CORS: Origin no permitido"));
   },
-  methods: ["POST", "OPTIONS"],
+  methods: ["GET", "POST", "OPTIONS"],
 });
 
 app.use("/nip-reset", corsForNipReset);
@@ -76,9 +76,20 @@ app.use((err, req, res, next) => {
 /**
  * Schemas
  */
-const nipResetRequestSchema = z.object({
+const nipResetLookupSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
-  phone: z.string().trim().regex(/^\d{10}$/, "Teléfono debe ser de 10 dígitos"),
+  whatsapp_id: z.string().trim().regex(/^\d{10}$/, "Teléfono debe ser de 10 dígitos"),
+});
+
+const nipResetSendLinkSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  whatsapp_id: z.string().trim().regex(/^\d{10}$/, "Teléfono debe ser de 10 dígitos"),
+  cliente_id: z.string().trim().min(1).max(255),
+  vehiculoId: z.string().trim().min(1).max(255),
+});
+
+const nipResetTokenInfoSchema = z.object({
+  token: z.string().trim().min(20).max(200),
 });
 
 const nipResetConfirmSchema = z.object({
@@ -90,9 +101,16 @@ const nipResetConfirmSchema = z.object({
 /**
  * Rate limits
  */
-const nipResetLimiter = rateLimit({
-  windowMs: Number(process.env.NIP_RESET_IP_RATE_WINDOW_MINUTES || 15) * 60 * 1000,
-  max: Number(process.env.NIP_RESET_IP_RATE_MAX || 3),
+const nipLookupLimiter = rateLimit({
+  windowMs: Number(process.env.NIP_LOOKUP_IP_RATE_WINDOW_MINUTES || process.env.NIP_RESET_IP_RATE_WINDOW_MINUTES || 15) * 60 * 1000,
+  max: Number(process.env.NIP_LOOKUP_IP_RATE_MAX || process.env.NIP_RESET_IP_RATE_MAX || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const nipSendLinkLimiter = rateLimit({
+  windowMs: Number(process.env.NIP_SEND_LINK_IP_RATE_WINDOW_MINUTES || process.env.NIP_RESET_IP_RATE_WINDOW_MINUTES || 15) * 60 * 1000,
+  max: Number(process.env.NIP_SEND_LINK_IP_RATE_MAX || process.env.NIP_RESET_IP_RATE_MAX || 3),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -107,39 +125,60 @@ const nipConfirmLimiter = rateLimit({
 /**
  * Airtable helpers
  */
-function normalizePhoneForAirtable(phone10) {
-  return `52${phone10}`;
+function normalizePhoneForAirtable(whatsappId10) {
+  return `52${whatsappId10}`;
 }
 
 function airtableEscapeFormulaString(str) {
   return String(str).replace(/'/g, "\\'");
 }
 
-async function findAirtableRecordByEmailPhone(email, phone10) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const tableName = process.env.AIRTABLE_TABLE_NAME;
-  const emailField = process.env.AIRTABLE_EMAIL_FIELD;
-  const phoneField = process.env.AIRTABLE_PHONE_FIELD;
-
-  if (!apiKey || !baseId || !tableName || !emailField || !phoneField) {
-    throw new Error("Airtable: faltan variables de entorno");
+function normalizeAirtableText(value) {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) {
+    if (!value.length) return null;
+    return String(value[0]).trim() || null;
   }
+  const text = String(value).trim();
+  return text || null;
+}
 
-  const phone12 = normalizePhoneForAirtable(phone10);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  const emailEsc = airtableEscapeFormulaString(email.toLowerCase());
-  const phoneEsc = airtableEscapeFormulaString(phone12);
+function getAirtableConfig() {
+  const config = {
+    apiKey: process.env.AIRTABLE_API_KEY,
+    baseId: process.env.AIRTABLE_BASE_ID,
+    contactosTable: process.env.AIRTABLE_CONTACTOS_TABLE_NAME || "Contactos",
+    contactosEmailField: process.env.AIRTABLE_CONTACTOS_EMAIL_FIELD || "email",
+    contactosWhatsappField: process.env.AIRTABLE_CONTACTOS_WHATSAPP_FIELD || "whatsapp_id",
+    contactosClienteIdField: process.env.AIRTABLE_CONTACTOS_CLIENTE_ID_FIELD || "cliente_id",
+    vehiculosTable: process.env.AIRTABLE_VEHICULOS_TABLE_NAME || "Vehiculos",
+    vehiculosContactoLinkField: process.env.AIRTABLE_VEHICULOS_CONTACTO_LINK_FIELD || "whatsappNumero",
+    vehiculosVehiculoIdField: process.env.AIRTABLE_VEHICULOS_VEHICULO_ID_FIELD || "vehiculoId",
+    vehiculosApodoField: process.env.AIRTABLE_VEHICULOS_APODO_FIELD || "apodo",
+  };
 
-  const formula = `AND(LOWER({${emailField}})='${emailEsc}', OR({${phoneField}}='${phoneEsc}', {${phoneField}}=${phoneEsc}))`;
+  if (!config.apiKey || !config.baseId) {
+    throw new Error("Airtable: faltan AIRTABLE_API_KEY o AIRTABLE_BASE_ID");
+  }
+  return config;
+}
 
-  const url =
-    `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}` +
-    `?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`;
+async function airtableListRecords({ tableName, formula, maxRecords = 100 }) {
+  const cfg = getAirtableConfig();
+  const base = `https://api.airtable.com/v0/${cfg.baseId}/${encodeURIComponent(tableName)}`;
+  const query = new URLSearchParams({
+    maxRecords: String(maxRecords),
+    filterByFormula: formula,
+  });
+  const url = `${base}?${query.toString()}`;
 
   const resp = await fetch(url, {
     method: "GET",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${cfg.apiKey}` },
   });
 
   if (!resp.ok) {
@@ -148,55 +187,139 @@ async function findAirtableRecordByEmailPhone(email, phone10) {
   }
 
   const data = await resp.json();
-  return Array.isArray(data?.records) && data.records.length ? data.records[0] : null;
+  return Array.isArray(data?.records) ? data.records : [];
 }
 
-async function isCustomerRefRateLimited(customerRef) {
-  const windowMinutes = Number(process.env.CUSTOMER_REF_RATE_WINDOW_MINUTES || 60);
-  const maxPerWindow = Number(process.env.CUSTOMER_REF_RATE_MAX || 2);
+async function findContactoByEmailWhatsapp(email, whatsapp10) {
+  const cfg = getAirtableConfig();
+  const phone12 = normalizePhoneForAirtable(whatsapp10);
 
+  const emailEsc = airtableEscapeFormulaString(email.toLowerCase());
+  const phoneEsc = airtableEscapeFormulaString(phone12);
+
+  const formula = `AND(LOWER({${cfg.contactosEmailField}})='${emailEsc}', OR({${cfg.contactosWhatsappField}}='${phoneEsc}', {${cfg.contactosWhatsappField}}=${phoneEsc}))`;
+  const records = await airtableListRecords({
+    tableName: cfg.contactosTable,
+    formula,
+    maxRecords: 1,
+  });
+
+  if (!records.length) return null;
+  const rec = records[0];
+  const clienteId = normalizeAirtableText(rec?.fields?.[cfg.contactosClienteIdField]);
+  if (!clienteId) return null;
+
+  return {
+    contacto_record_id: rec.id,
+    cliente_id: clienteId,
+  };
+}
+
+async function listVehiculosByContacto(contactoRecordId) {
+  const cfg = getAirtableConfig();
+  const contactoEsc = airtableEscapeFormulaString(contactoRecordId);
+  const formula = `FIND('${contactoEsc}', ARRAYJOIN({${cfg.vehiculosContactoLinkField}}, ','))`;
+  const records = await airtableListRecords({
+    tableName: cfg.vehiculosTable,
+    formula,
+    maxRecords: 100,
+  });
+
+  const out = [];
+  for (const rec of records) {
+    const vehiculoId = normalizeAirtableText(rec?.fields?.[cfg.vehiculosVehiculoIdField]);
+    if (!vehiculoId) continue;
+    const apodoRaw = normalizeAirtableText(rec?.fields?.[cfg.vehiculosApodoField]);
+    const apodo = apodoRaw || "Vehículo sin apodo";
+    out.push({
+      vehiculo_record_id: rec.id,
+      vehiculoId,
+      apodo,
+      identifica_tu_vehiculo: apodo,
+    });
+  }
+  return out;
+}
+
+async function findContactoAndVehiculos(email, whatsapp10) {
+  const contacto = await findContactoByEmailWhatsapp(email, whatsapp10);
+  if (!contacto) return null;
+  const vehiculos = await listVehiculosByContacto(contacto.contacto_record_id);
+  return { ...contacto, vehiculos };
+}
+
+async function isVehicleRateLimited(clienteId, vehiculoId) {
+  const windowMinutes = Number(process.env.CUSTOMER_VEHICLE_RATE_WINDOW_MINUTES || 60);
+  const maxPerWindow = Number(process.env.CUSTOMER_VEHICLE_RATE_MAX || 2);
   const q = `
     SELECT COUNT(*)::int AS c
     FROM nip_reset_tokens
-    WHERE customer_ref = $1
-      AND created_at > now() - ($2 * interval '1 minute')
+    WHERE cliente_id = $1
+      AND vehiculo_id = $2
+      AND created_at > now() - ($3 * interval '1 minute')
   `;
-
-  const { rows } = await pool.query(q, [customerRef, windowMinutes]);
+  const { rows } = await pool.query(q, [clienteId, vehiculoId, windowMinutes]);
   return (rows?.[0]?.c || 0) >= maxPerWindow;
 }
 
-async function updateAirtableNip(recordId, nip) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const tableName = process.env.AIRTABLE_TABLE_NAME;
-  const nipField = process.env.AIRTABLE_NIP_FIELD;
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  if (!apiKey || !baseId || !tableName || !nipField) {
-    throw new Error("Airtable: faltan variables de entorno para update");
+function buildWebhookSignature(secret, timestamp, payloadString) {
+  const stringToSign = `${timestamp}.${payloadString}`;
+  return crypto.createHmac("sha256", secret).update(stringToSign).digest("hex");
+}
+
+async function sendNipPersistWebhook(payload) {
+  const webhookUrl = process.env.NIP_PERSIST_WEBHOOK_URL;
+  const webhookSecret = process.env.NIP_PERSIST_WEBHOOK_SECRET;
+  if (!webhookUrl || !webhookSecret) {
+    throw new Error("Webhook persistencia NIP no configurado");
   }
 
-  const url =
-    `https://api.airtable.com/v0/${baseId}/` +
-    `${encodeURIComponent(tableName)}/` +
-    `${recordId}`;
+  const timeoutMs = Number(process.env.NIP_PERSIST_WEBHOOK_TIMEOUT_MS || 8000);
+  const retryDelayMs = Number(process.env.NIP_PERSIST_WEBHOOK_RETRY_DELAY_MS || 400);
+  const maxAttempts = 2;
 
-  const resp = await fetch(url, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      fields: {
-        [nipField]: nip, // texto
-      },
-    }),
-  });
+  const body = JSON.stringify(payload);
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`Airtable update failed (${resp.status}): ${text.slice(0, 200)}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const timestamp = new Date().toISOString();
+    const signature = buildWebhookSignature(webhookSecret, timestamp, body);
+
+    try {
+      const resp = await fetchWithTimeout(
+        webhookUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-ama-event": payload.evento,
+            "x-ama-timestamp": timestamp,
+            "x-ama-signature": signature,
+          },
+          body,
+        },
+        timeoutMs
+      );
+
+      if (resp.ok) return;
+
+      const txt = await resp.text().catch(() => "");
+      const err = new Error(`Webhook persist failed (${resp.status}): ${txt.slice(0, 200)}`);
+      if (attempt === maxAttempts) throw err;
+    } catch (e) {
+      if (attempt === maxAttempts) throw e;
+    }
+
+    await sleep(retryDelayMs);
   }
 }
 
@@ -455,25 +578,11 @@ async function sendResetEmail(toEmail, token, ttlMinutes) {
 }
 
 /**
- * POST /nip-reset/request
+ * POST /nip-reset/lookup
  */
-app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
-  // LOG DE ENTRADA (para depurar "no llegan correos")
-  console.log("[nip-reset/request] hit", {
-    t: new Date().toISOString(),
-    origin: req.get("origin") || null,
-    ip: req.ip || null,
-  });
-
-  const genericResponse = {
-    ok: true,
-    message:
-      "Listo. Si los datos coinciden con un registro, recibirás un correo con la liga para restablecer tu NIP.",
-  };
-
-  const parsed = nipResetRequestSchema.safeParse(req.body);
+app.post("/nip-reset/lookup", nipLookupLimiter, async (req, res) => {
+  const parsed = nipResetLookupSchema.safeParse(req.body);
   if (!parsed.success) {
-    console.log("[nip-reset/request] invalid payload");
     return res.status(400).json({
       ok: false,
       message: "Datos inválidos. Revisa correo y teléfono.",
@@ -481,74 +590,178 @@ app.post("/nip-reset/request", nipResetLimiter, async (req, res) => {
     });
   }
 
-  const { email, phone } = parsed.data;
+  const { email, whatsapp_id } = parsed.data;
 
-  // Airtable lookup
-  let airtableRec = null;
   try {
-    airtableRec = await findAirtableRecordByEmailPhone(email, phone);
-    console.log("[nip-reset/request] airtable match:", Boolean(airtableRec));
+    const found = await findContactoAndVehiculos(email, whatsapp_id);
+    if (!found || !Array.isArray(found.vehiculos) || found.vehiculos.length === 0) {
+      return res.status(404).json({ ok: false, message: "Datos incorrectos" });
+    }
+
+    const step = found.vehiculos.length === 1 ? "confirmar_vehiculo_unico" : "seleccionar_vehiculo";
+    return res.status(200).json({
+      ok: true,
+      step,
+      cliente_id: found.cliente_id,
+      contacto_record_id: found.contacto_record_id,
+      vehiculos: found.vehiculos.map((v) => ({
+        vehiculoId: v.vehiculoId,
+        vehiculo_record_id: v.vehiculo_record_id,
+        identifica_tu_vehiculo: v.identifica_tu_vehiculo,
+      })),
+    });
   } catch (e) {
-    console.error("[nip-reset/request] airtable lookup error:", e?.message || e);
-    return res.status(200).json(genericResponse);
+    console.error("[nip-reset/lookup] error:", e?.message || e);
+    return res.status(500).json({ ok: false, message: "No fue posible completar la operación." });
+  }
+});
+
+/**
+ * POST /nip-reset/send-link
+ */
+app.post("/nip-reset/send-link", nipSendLinkLimiter, async (req, res) => {
+  const parsed = nipResetSendLinkSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      message: "Datos inválidos. Revisa correo, teléfono y vehículo.",
+      errors: parsed.error.issues.map((i) => ({ field: i.path.join("."), msg: i.message })),
+    });
   }
 
-  if (!airtableRec) {
-    return res.status(200).json(genericResponse);
-  }
-
-  const customerRef = airtableRec.id;
-
-  // Rate-limit per customerRef
-  try {
-    const limited = await isCustomerRefRateLimited(customerRef);
-    console.log("[nip-reset/request] customerRef limited:", limited);
-    if (limited) return res.status(200).json(genericResponse);
-  } catch (e) {
-    console.error("[nip-reset/request] customerRef rate-limit error:", e?.message || e);
-    return res.status(200).json(genericResponse);
-  }
-
-  // TTL
-  const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 60);
-  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
-
-  // Token
-  const token = crypto.randomBytes(32).toString("base64url");
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const { email, whatsapp_id, cliente_id, vehiculoId } = parsed.data;
 
   try {
-    // One-active-token policy
-    await pool.query(
-      "UPDATE nip_reset_tokens SET used_at = now() WHERE customer_ref=$1 AND used_at IS NULL",
-      [customerRef]
-    );
+    const found = await findContactoAndVehiculos(email, whatsapp_id);
+    if (!found || found.cliente_id !== cliente_id) {
+      return res.status(404).json({ ok: false, message: "Datos incorrectos" });
+    }
 
-    await pool.query(
-      `INSERT INTO nip_reset_tokens (customer_ref, token_hash, expires_at, request_ip, user_agent)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [customerRef, tokenHash, expiresAt, req.ip || null, req.get("user-agent") || null]
-    );
+    const selectedVehicle = (found.vehiculos || []).find((v) => v.vehiculoId === vehiculoId);
+    if (!selectedVehicle) {
+      return res.status(404).json({ ok: false, message: "Datos incorrectos" });
+    }
 
-    console.log("[nip-reset/request] token stored, sending email to:", email);
+    const vehicleLimited = await isVehicleRateLimited(cliente_id, vehiculoId);
+    if (vehicleLimited) {
+      return res.status(429).json({
+        ok: false,
+        message: "Demasiados intentos. Intenta nuevamente más tarde.",
+      });
+    }
+
+    const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 60);
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+    const token = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE nip_reset_tokens
+         SET used_at = now()
+         WHERE cliente_id = $1
+           AND vehiculo_id = $2
+           AND used_at IS NULL`,
+        [cliente_id, vehiculoId]
+      );
+
+      await client.query(
+        `INSERT INTO nip_reset_tokens (
+           customer_ref,
+           cliente_id,
+           contacto_record_id,
+           vehiculo_id,
+           vehiculo_record_id,
+           vehiculo_apodo,
+           token_hash,
+           expires_at,
+           request_ip,
+           user_agent
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [
+          found.contacto_record_id,
+          cliente_id,
+          found.contacto_record_id,
+          vehiculoId,
+          selectedVehicle.vehiculo_record_id,
+          selectedVehicle.apodo,
+          tokenHash,
+          expiresAt,
+          req.ip || null,
+          req.get("user-agent") || null,
+        ]
+      );
+
+      await client.query("COMMIT");
+    } catch (txError) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw txError;
+    } finally {
+      client.release();
+    }
 
     try {
       await sendResetEmail(email, token, ttlMinutes);
-      return res.status(200).json(genericResponse);
     } catch (mailErr) {
-      console.error("[nip-reset/request] Email send error:", mailErr?.message || mailErr);
-
-      // Invalidate token if mail failed
       await pool.query(
-        "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash=$1 AND used_at IS NULL",
+        "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash = $1 AND used_at IS NULL",
         [tokenHash]
       );
-
-      return res.status(200).json(genericResponse);
+      throw mailErr;
     }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Hemos enviado al correo registrado la URL para reiniciar tu NIP.",
+    });
   } catch (e) {
-    console.error("[nip-reset/request] internal error:", e?.message || e);
-    return res.status(200).json(genericResponse);
+    console.error("[nip-reset/send-link] error:", e?.message || e);
+    return res.status(500).json({ ok: false, message: "No fue posible completar la operación." });
+  }
+});
+
+/**
+ * GET /nip-reset/token-info?token=...
+ */
+app.get("/nip-reset/token-info", async (req, res) => {
+  const parsed = nipResetTokenInfoSchema.safeParse({ token: req.query?.token });
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, message: "Token inválido." });
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(parsed.data.token).digest("hex");
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT cliente_id, vehiculo_id, vehiculo_apodo, expires_at, used_at
+       FROM nip_reset_tokens
+       WHERE token_hash = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tokenHash]
+    );
+
+    if (!rows.length) {
+      return res.status(403).json({ ok: false, message: "Liga inválida o expirada." });
+    }
+
+    const row = rows[0];
+    if (row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
+      return res.status(403).json({ ok: false, message: "Liga inválida o expirada." });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      cliente_id: row.cliente_id,
+      vehiculoId: row.vehiculo_id,
+      identifica_tu_vehiculo: row.vehiculo_apodo || "Vehículo sin apodo",
+    });
+  } catch (e) {
+    console.error("[nip-reset/token-info] error:", e?.message || e);
+    return res.status(500).json({ ok: false, message: "No fue posible completar la operación." });
   }
 });
 
@@ -573,7 +786,15 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
     await client.query("BEGIN");
 
     const r = await client.query(
-      `SELECT customer_ref, expires_at, used_at
+      `SELECT
+         customer_ref,
+         cliente_id,
+         contacto_record_id,
+         vehiculo_id,
+         vehiculo_record_id,
+         vehiculo_apodo,
+         expires_at,
+         used_at
        FROM nip_reset_tokens
        WHERE token_hash = $1
        ORDER BY created_at DESC
@@ -599,11 +820,7 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
       return res.status(403).json({ ok: false, message: "Liga inválida o expirada." });
     }
 
-    const recordId = row.customer_ref;
-    const looksLikeAirtableRecordId =
-      typeof recordId === "string" && recordId.startsWith("rec") && recordId.length >= 10;
-
-    if (!looksLikeAirtableRecordId) {
+    if (!row.cliente_id || !row.vehiculo_id) {
       await client.query("ROLLBACK");
       return res.status(503).json({
         ok: false,
@@ -611,7 +828,33 @@ app.post("/nip-reset/confirm", nipConfirmLimiter, async (req, res) => {
       });
     }
 
-    await updateAirtableNip(recordId, nip);
+    const requestId =
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : crypto.randomBytes(16).toString("hex");
+
+    const webhookPayload = {
+      evento: "NIP_RESET_CONFIRMADO",
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+      cliente_id: row.cliente_id,
+      vehiculoId: row.vehiculo_id,
+      contacto_record_id: row.contacto_record_id || row.customer_ref || null,
+      vehiculo_record_id: row.vehiculo_record_id || null,
+      apodo: row.vehiculo_apodo || null,
+      nuevo_nip: nip,
+    };
+
+    try {
+      await sendNipPersistWebhook(webhookPayload);
+    } catch (webhookError) {
+      await client.query("ROLLBACK");
+      console.error("[nip-reset/confirm] webhook error:", webhookError?.message || webhookError);
+      return res.status(503).json({
+        ok: false,
+        message: "No fue posible completar la operación. Intenta nuevamente.",
+      });
+    }
 
     const u = await client.query(
       "UPDATE nip_reset_tokens SET used_at = now() WHERE token_hash=$1 AND used_at IS NULL",
