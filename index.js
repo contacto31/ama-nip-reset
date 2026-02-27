@@ -293,6 +293,25 @@ async function listVehiculosByContacto(contactoRecordId, clienteId, whatsapp10) 
     collect(byLink);
   }
 
+  // Fallback: algunos equipos guardan el campo configurado como texto/telefono
+  // (por ejemplo whatsappNumero) en lugar de record-link.
+  if (collected.size === 0 && whatsapp10 && cfg.vehiculosContactoLinkField) {
+    const phone10 = normalizePhone10(whatsapp10);
+    const phone12 = normalizePhoneForAirtable(phone10 || whatsapp10);
+    const phone10Esc = airtableEscapeFormulaString(phone10 || "");
+    const phone12Esc = airtableEscapeFormulaString(phone12);
+    const formulaByContactoFieldAsPhone =
+      `OR(TOSTRING({${cfg.vehiculosContactoLinkField}})='${phone12Esc}', TOSTRING({${cfg.vehiculosContactoLinkField}})='${phone10Esc}')`;
+
+    const byContactoFieldAsPhone = await airtableListRecordsSafe({
+      tableName: cfg.vehiculosTable,
+      formula: formulaByContactoFieldAsPhone,
+      maxRecords: 100,
+      context: "vehiculos_by_contacto_field_as_phone",
+    });
+    collect(byContactoFieldAsPhone);
+  }
+
   if (collected.size === 0 && clienteId && cfg.vehiculosClienteIdField) {
     const clienteEsc = airtableEscapeFormulaString(clienteId);
     const formulaByClienteId = `TOSTRING({${cfg.vehiculosClienteIdField}})='${clienteEsc}'`;
@@ -335,6 +354,11 @@ async function findContactoAndVehiculos(email, whatsapp10) {
     contacto.cliente_id,
     phone10
   );
+  console.log("[nip-reset/lookup] contacto y vehiculos", {
+    contactoRecordId: contacto.contacto_record_id,
+    clienteId: contacto.cliente_id,
+    vehiculosEncontrados: Array.isArray(vehiculos) ? vehiculos.length : 0,
+  });
   return { ...contacto, vehiculos };
 }
 
