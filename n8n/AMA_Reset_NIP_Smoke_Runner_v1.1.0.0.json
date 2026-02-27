@@ -1,0 +1,119 @@
+{
+  "name": "AMA Reset NIP - Smoke Runner",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-rn-manual",
+      "name": "Manual Trigger - Smoke",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "baseUrl",
+              "type": "string",
+              "value": "https://reset.amatracksafe.com.mx"
+            },
+            {
+              "id": "a2",
+              "name": "runPositiveLookup",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "id": "a3",
+              "name": "runSendLink",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "id": "a4",
+              "name": "validEmail",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "a5",
+              "name": "validWhatsappId",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "a6",
+              "name": "validVehiculoId",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "a7",
+              "name": "originForNipReset",
+              "type": "string",
+              "value": "https://amatracksafe.com.mx"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-rn-config",
+      "name": "Smoke Config Inputs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "AMA Reset NIP - Smoke Tests (Subworkflow)"
+        },
+        "mode": "runOnceForAllItems",
+        "options": {}
+      },
+      "id": "node-rn-call-sub",
+      "name": "Run Smoke Subworkflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger - Smoke": {
+      "main": [
+        {
+          "node": "Smoke Config Inputs",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Smoke Config Inputs": {
+      "main": [
+        {
+          "node": "Run Smoke Subworkflow",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

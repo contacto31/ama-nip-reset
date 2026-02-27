@@ -1,0 +1,126 @@
+{
+  "name": "AMA Reset NIP - Persistencia (Produccion)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ama-reset-nip-persist",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "node-nip-webhook",
+      "name": "Webhook_NIP_Persist",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "ama-reset-nip-persist-v1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst input = $input.first().json || {};\nconst headersRaw = input.headers || {};\nconst body = input.body || {};\n\nconst headers = {};\nfor (const [k, v] of Object.entries(headersRaw)) {\n  headers[String(k).toLowerCase()] = Array.isArray(v) ? v[0] : v;\n}\n\nconst webhookSecret = $env.NIP_PERSIST_WEBHOOK_SECRET || '';\nif (!webhookSecret) {\n  throw new Error('NIP_PERSIST_WEBHOOK_SECRET no configurado en n8n.');\n}\n\nconst headerEvent = String(headers['x-ama-event'] || '');\nconst headerTimestamp = String(headers['x-ama-timestamp'] || '');\nconst headerSignature = String(headers['x-ama-signature'] || '');\n\nif (headerEvent !== 'NIP_RESET_CONFIRMADO' || body.evento !== 'NIP_RESET_CONFIRMADO') {\n  throw new Error('Evento no permitido.');\n}\n\nif (!headerTimestamp || !headerSignature) {\n  throw new Error('Headers de firma incompletos.');\n}\n\nconst payloadString = JSON.stringify(body);\nconst expected = crypto\n  .createHmac('sha256', webhookSecret)\n  .update(`${headerTimestamp}.${payloadString}`)\n  .digest('hex');\n\nconst firmaValida =\n  headerSignature.length === expected.length &&\n  crypto.timingSafeEqual(Buffer.from(headerSignature), Buffer.from(expected));\n\nif (!firmaValida) {\n  throw new Error('Firma invalida.');\n}\n\nif (!body.cliente_id || !body.vehiculoId || !body.vehiculo_record_id || !body.nuevo_nip) {\n  throw new Error('Payload incompleto.');\n}\n\nif (!/^\\d{4}$/.test(String(body.nuevo_nip))) {\n  throw new Error('NIP invalido.');\n}\n\nconst baseId = $env.AIRTABLE_BASE_ID || '';\nconst tableName = $env.AIRTABLE_VEHICULOS_TABLE_NAME || 'Vehiculos';\nconst nipField = $env.AIRTABLE_VEHICULOS_NIP_FIELD || 'nip';\n\nif (!baseId) {\n  throw new Error('AIRTABLE_BASE_ID no configurado en n8n.');\n}\n\nconst fields = {};\nfields[nipField] = String(body.nuevo_nip);\n\nreturn [{\n  json: {\n    evento: body.evento,\n    request_id: body.request_id || null,\n    cliente_id: body.cliente_id,\n    vehiculoId: body.vehiculoId,\n    contacto_record_id: body.contacto_record_id || null,\n    vehiculo_record_id: body.vehiculo_record_id,\n    apodo: body.apodo || null,\n    firmaValida: true,\n    _airtableUrl: `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${encodeURIComponent(body.vehiculo_record_id)}`,\n    _airtableBody: {\n      fields,\n    },\n  },\n}];"
+      },
+      "id": "node-nip-validate",
+      "name": "Validar_Firma_y_Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $json._airtableUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.AIRTABLE_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json._airtableBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "node-nip-airtable-patch",
+      "name": "Persistir_NIP_Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const validation = $('Validar_Firma_y_Payload').first().json;\nconst httpResp = $input.first().json || {};\nconst statusCode = Number(httpResp.statusCode || httpResp.status || 200);\n\nif (statusCode < 200 || statusCode > 299) {\n  throw new Error('Persistencia Airtable no exitosa.');\n}\n\nreturn [{\n  json: {\n    ok: true,\n    evento: validation.evento,\n    request_id: validation.request_id,\n    cliente_id: validation.cliente_id,\n    vehiculoId: validation.vehiculoId,\n    persisted: true,\n  },\n}];"
+      },
+      "id": "node-nip-response",
+      "name": "Respuesta_OK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook_NIP_Persist": {
+      "main": [
+        [
+          {
+            "node": "Validar_Firma_y_Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar_Firma_y_Payload": {
+      "main": [
+        [
+          {
+            "node": "Persistir_NIP_Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persistir_NIP_Airtable": {
+      "main": [
+        [
+          {
+            "node": "Respuesta_OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1.1.0.0",
+  "id": "AMA_Reset_NIP_Persist_Produccion_v1.1.0.0"
+}
