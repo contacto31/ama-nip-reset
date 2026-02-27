@@ -159,6 +159,9 @@ function sleep(ms) {
 }
 
 function getAirtableConfig() {
+  const vehiculosClienteIdFieldRaw = String(process.env.AIRTABLE_VEHICULOS_CLIENTE_ID_FIELD || "").trim();
+  const vehiculosWhatsappFieldRaw = String(process.env.AIRTABLE_VEHICULOS_WHATSAPP_FIELD || "").trim();
+
   const config = {
     apiKey: process.env.AIRTABLE_API_KEY,
     baseId: process.env.AIRTABLE_BASE_ID,
@@ -168,8 +171,8 @@ function getAirtableConfig() {
     contactosClienteIdField: process.env.AIRTABLE_CONTACTOS_CLIENTE_ID_FIELD || "cliente_id",
     vehiculosTable: process.env.AIRTABLE_VEHICULOS_TABLE_NAME || "Vehiculos",
     vehiculosContactoLinkField: process.env.AIRTABLE_VEHICULOS_CONTACTO_LINK_FIELD || "whatsappNumero",
-    vehiculosClienteIdField: process.env.AIRTABLE_VEHICULOS_CLIENTE_ID_FIELD || "cliente_id",
-    vehiculosWhatsappField: process.env.AIRTABLE_VEHICULOS_WHATSAPP_FIELD || "whatsapp_id",
+    vehiculosClienteIdField: vehiculosClienteIdFieldRaw || null,
+    vehiculosWhatsappField: vehiculosWhatsappFieldRaw || null,
     vehiculosVehiculoIdField: process.env.AIRTABLE_VEHICULOS_VEHICULO_ID_FIELD || "vehiculoId",
     vehiculosApodoField: process.env.AIRTABLE_VEHICULOS_APODO_FIELD || "apodo",
   };
@@ -201,6 +204,15 @@ async function airtableListRecords({ tableName, formula, maxRecords = 100 }) {
 
   const data = await resp.json();
   return Array.isArray(data?.records) ? data.records : [];
+}
+
+async function airtableListRecordsSafe({ tableName, formula, maxRecords = 100, context = "lookup" }) {
+  try {
+    return await airtableListRecords({ tableName, formula, maxRecords });
+  } catch (e) {
+    console.warn(`[airtable-safe:${context}]`, e?.message || e);
+    return [];
+  }
 }
 
 async function findContactoByEmailWhatsapp(email, whatsapp10) {
@@ -268,33 +280,38 @@ async function listVehiculosByContacto(contactoRecordId, clienteId, whatsapp10) 
   if (contactoRecordId) {
     const contactoEsc = airtableEscapeFormulaString(contactoRecordId);
     const formulaByLink = `FIND('${contactoEsc}', ARRAYJOIN({${cfg.vehiculosContactoLinkField}}, ','))`;
-    const byLink = await airtableListRecords({
+    const byLink = await airtableListRecordsSafe({
       tableName: cfg.vehiculosTable,
       formula: formulaByLink,
       maxRecords: 100,
+      context: "vehiculos_by_link",
     });
     collect(byLink);
   }
 
-  if (collected.size === 0 && clienteId) {
+  if (collected.size === 0 && clienteId && cfg.vehiculosClienteIdField) {
     const clienteEsc = airtableEscapeFormulaString(clienteId);
-    const formulaByClienteId = `OR({${cfg.vehiculosClienteIdField}}='${clienteEsc}', {${cfg.vehiculosClienteIdField}}=${clienteEsc})`;
-    const byClienteId = await airtableListRecords({
+    const formulaByClienteId = `TOSTRING({${cfg.vehiculosClienteIdField}})='${clienteEsc}'`;
+    const byClienteId = await airtableListRecordsSafe({
       tableName: cfg.vehiculosTable,
       formula: formulaByClienteId,
       maxRecords: 100,
+      context: "vehiculos_by_cliente_id",
     });
     collect(byClienteId);
   }
 
-  if (collected.size === 0 && whatsapp10) {
-    const phone12 = normalizePhoneForAirtable(whatsapp10);
+  if (collected.size === 0 && whatsapp10 && cfg.vehiculosWhatsappField) {
+    const phone10 = normalizePhone10(whatsapp10);
+    const phone12 = normalizePhoneForAirtable(phone10 || whatsapp10);
     const phoneEsc = airtableEscapeFormulaString(phone12);
-    const formulaByWhatsapp = `OR({${cfg.vehiculosWhatsappField}}='${phoneEsc}', {${cfg.vehiculosWhatsappField}}=${phoneEsc})`;
-    const byWhatsapp = await airtableListRecords({
+    const phone10Esc = airtableEscapeFormulaString(phone10 || "");
+    const formulaByWhatsapp = `OR(TOSTRING({${cfg.vehiculosWhatsappField}})='${phoneEsc}', TOSTRING({${cfg.vehiculosWhatsappField}})='${phone10Esc}')`;
+    const byWhatsapp = await airtableListRecordsSafe({
       tableName: cfg.vehiculosTable,
       formula: formulaByWhatsapp,
       maxRecords: 100,
+      context: "vehiculos_by_whatsapp",
     });
     collect(byWhatsapp);
   }
