@@ -301,7 +301,7 @@ async function listVehiculosByContacto(contactoRecordId, clienteId, whatsapp10) 
     const phone10Esc = airtableEscapeFormulaString(phone10 || "");
     const phone12Esc = airtableEscapeFormulaString(phone12);
     const formulaByContactoFieldAsPhone =
-      `OR(TOSTRING({${cfg.vehiculosContactoLinkField}})='${phone12Esc}', TOSTRING({${cfg.vehiculosContactoLinkField}})='${phone10Esc}')`;
+      `OR(({${cfg.vehiculosContactoLinkField}}&'')='${phone12Esc}', ({${cfg.vehiculosContactoLinkField}}&'')='${phone10Esc}')`;
 
     const byContactoFieldAsPhone = await airtableListRecordsSafe({
       tableName: cfg.vehiculosTable,
@@ -314,7 +314,7 @@ async function listVehiculosByContacto(contactoRecordId, clienteId, whatsapp10) 
 
   if (collected.size === 0 && clienteId && cfg.vehiculosClienteIdField) {
     const clienteEsc = airtableEscapeFormulaString(clienteId);
-    const formulaByClienteId = `TOSTRING({${cfg.vehiculosClienteIdField}})='${clienteEsc}'`;
+    const formulaByClienteId = `({${cfg.vehiculosClienteIdField}}&'')='${clienteEsc}'`;
     const byClienteId = await airtableListRecordsSafe({
       tableName: cfg.vehiculosTable,
       formula: formulaByClienteId,
@@ -329,7 +329,7 @@ async function listVehiculosByContacto(contactoRecordId, clienteId, whatsapp10) 
     const phone12 = normalizePhoneForAirtable(phone10 || whatsapp10);
     const phoneEsc = airtableEscapeFormulaString(phone12);
     const phone10Esc = airtableEscapeFormulaString(phone10 || "");
-    const formulaByWhatsapp = `OR(TOSTRING({${cfg.vehiculosWhatsappField}})='${phoneEsc}', TOSTRING({${cfg.vehiculosWhatsappField}})='${phone10Esc}')`;
+    const formulaByWhatsapp = `OR(({${cfg.vehiculosWhatsappField}}&'')='${phoneEsc}', ({${cfg.vehiculosWhatsappField}}&'')='${phone10Esc}')`;
     const byWhatsapp = await airtableListRecordsSafe({
       tableName: cfg.vehiculosTable,
       formula: formulaByWhatsapp,
