@@ -230,16 +230,20 @@ async function findContactoByEmailWhatsapp(email, whatsapp10) {
 
   if (!records.length) return null;
 
-  const rec = records.find((r) => {
+  let rec = null;
+  let clienteId = null;
+  for (const r of records) {
     const raw = normalizeAirtableText(r?.fields?.[cfg.contactosWhatsappField]);
     const last10 = normalizePhone10(raw);
-    return last10 === phone10;
-  });
+    if (last10 !== phone10) continue;
+    const cid = normalizeAirtableText(r?.fields?.[cfg.contactosClienteIdField]);
+    if (!cid) continue;
+    rec = r;
+    clienteId = cid;
+    break;
+  }
 
-  if (!rec) return null;
-
-  const clienteId = normalizeAirtableText(rec?.fields?.[cfg.contactosClienteIdField]);
-  if (!clienteId) return null;
+  if (!rec || !clienteId) return null;
 
   return {
     contacto_record_id: rec.id,
